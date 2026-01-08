@@ -1,0 +1,21 @@
+# Environment variables
+.env
+.env.local
+
+# Config files with secrets
+config.json
+
+# Python virtual environment
+venv/
+.venv/
+env/
+__pycache__/
+*.pyc
+
+# IDE settings
+.vscode/
+.idea/
+.DS_Store
+
+# Temporary files
+test_agent_loop.py

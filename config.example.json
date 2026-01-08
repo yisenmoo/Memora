@@ -1,0 +1,41 @@
+{
+  "llms": {
+    "qwen3-30b": {
+      "provider": "ollama",
+      "model": "qwen3:30b",
+      "base_url": "http://localhost:11434",
+      "description": "Qwen 3 30B (Local Server)",
+      "stream": true
+    },
+    "chatgpt-4o": {
+      "provider": "openai",
+      "model": "gpt-4o",
+      "base_url": "https://api.openai.com/v1",
+      "api_key": "${OPENAI_API_KEY}",
+      "description": "ChatGPT-4o (OpenAI)",
+      "stream": true
+    },
+    "deepseek-v3": {
+      "provider": "goapi",
+      "model": "deepseek-chat",
+      "base_url": "https://api.deepseek.com",
+      "api_key": "${DEEPSEEK_API_KEY}",
+      "description": "DeepSeek V3 (DeepSeek API)",
+      "stream": true
+    },
+    "gemini-pro": {
+      "provider": "gemini",
+      "model": "gemini-pro",
+      "api_key": "${GOOGLE_API_KEY}",
+      "description": "Gemini Pro (Google API)",
+      "stream": true
+    },
+    "qwen-max": {
+      "provider": "dashscope",
+      "model": "qwen-max",
+      "api_key": "${DASHSCOPE_API_KEY}",
+      "description": "Qwen Max (Aliyun API)",
+      "stream": true
+    }
+  }
+}

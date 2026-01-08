@@ -1,0 +1,344 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Agent Chat</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Alpine.js -->
+    <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
+    <!-- Marked (Markdown) -->
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <!-- Highlight.js -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+    
+    <style>
+        [x-cloak] { display: none !important; }
+        
+        /* Custom scrollbar for thinking block */
+        .thinking-block {
+            max-height: 4.5em; /* Approx 3 lines */
+            overflow-y: auto;
+            font-family: monospace;
+            font-size: 0.85rem;
+            background-color: #f3f4f6;
+            border-left: 3px solid #9ca3af;
+            padding: 0.5rem;
+            margin-bottom: 0.5rem;
+            color: #4b5563;
+        }
+        
+        /* Dark mode thinking */
+        .dark .thinking-block {
+            background-color: #374151;
+            border-left-color: #6b7280;
+            color: #d1d5db;
+        }
+
+        /* Markdown Styles */
+        .prose pre {
+            background-color: #1f2937;
+            padding: 1rem;
+            border-radius: 0.5rem;
+            overflow-x: auto;
+        }
+    </style>
+</head>
+<body class="bg-gray-100 dark:bg-gray-900 text-gray-800 dark:text-gray-100 h-[100dvh] flex flex-col overflow-hidden" x-data="chatApp()" x-init="initApp()">
+
+    <!-- Header -->
+    <header class="bg-white dark:bg-gray-800 shadow-sm p-4 flex justify-between items-center z-10">
+        <div class="flex items-center space-x-2">
+            <span class="text-xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-blue-500 to-teal-400">AI Agent</span>
+        </div>
+        
+        <!-- Model Selector -->
+        <div class="flex items-center space-x-2">
+            <select x-model="selectedModel" class="bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+                <template x-for="model in models" :key="model.id">
+                    <option :value="model.id" x-text="model.description || model.id"></option>
+                </template>
+            </select>
+        </div>
+    </header>
+
+    <!-- Chat Area -->
+    <main class="flex-1 overflow-y-auto p-4 space-y-6" id="chat-container">
+        <template x-for="(msg, index) in messages" :key="index">
+            <div class="flex flex-col w-full max-w-4xl mx-auto" :class="msg.role === 'user' ? 'items-end' : 'items-start'">
+                
+                <!-- Message Bubble -->
+                <div class="max-w-[85%] sm:max-w-[75%] rounded-2xl px-4 py-3 shadow-sm"
+                     :class="msg.role === 'user' ? 'bg-blue-600 text-white rounded-br-none' : 'bg-white dark:bg-gray-800 rounded-bl-none'">
+                    
+                    <!-- Images (User) -->
+                    <template x-if="msg.images && msg.images.length">
+                        <div class="mb-2 flex gap-2 flex-wrap">
+                            <template x-for="(img, i) in msg.images" :key="i">
+                                <img :src="'data:image/png;base64,' + img" class="h-32 w-auto rounded-md border border-white/20">
+                            </template>
+                        </div>
+                    </template>
+
+                    <!-- Thinking Block (AI) -->
+                    <template x-if="msg.role === 'assistant' && msg.thinking">
+                        <div class="thinking-block">
+                            <div class="font-bold text-xs mb-1 opacity-70">Thinking...</div>
+                            <div class="whitespace-pre-wrap" x-text="msg.thinking"></div>
+                        </div>
+                    </template>
+
+                    <!-- Content -->
+                    <div class="prose dark:prose-invert max-w-none text-sm sm:text-base break-words" x-html="renderMarkdown(msg.content)"></div>
+                    
+                    <!-- Error -->
+                    <template x-if="msg.error">
+                        <div class="text-red-500 text-xs mt-2" x-text="msg.error"></div>
+                    </template>
+                </div>
+                
+                <!-- Metadata/Time -->
+                <div class="text-xs text-gray-400 mt-1 mx-1" x-text="msg.role === 'user' ? 'You' : (msg.source || 'AI')"></div>
+            </div>
+        </template>
+        
+        <!-- Loading Indicator -->
+        <div x-show="isLoading && !isStreaming" class="flex justify-center">
+            <div class="animate-pulse flex space-x-2">
+                <div class="h-2 w-2 bg-gray-400 rounded-full"></div>
+                <div class="h-2 w-2 bg-gray-400 rounded-full"></div>
+                <div class="h-2 w-2 bg-gray-400 rounded-full"></div>
+            </div>
+        </div>
+        
+        <!-- Spacer for bottom input -->
+        <div class="h-20"></div>
+    </main>
+
+    <!-- Input Area -->
+    <footer class="bg-white dark:bg-gray-800 p-4 border-t dark:border-gray-700">
+        <div class="max-w-4xl mx-auto relative">
+            
+            <!-- File Preview -->
+            <div x-show="attachments.length > 0" class="flex gap-2 mb-2 overflow-x-auto py-2">
+                <template x-for="(file, idx) in attachments" :key="idx">
+                    <div class="relative group">
+                        <img :src="file.preview" class="h-16 w-16 object-cover rounded-md border dark:border-gray-600">
+                        <button @click="removeAttachment(idx)" class="absolute -top-1 -right-1 bg-red-500 text-white rounded-full p-0.5 shadow-md hover:bg-red-600">
+                            <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+                        </button>
+                    </div>
+                </template>
+            </div>
+
+            <div class="flex items-end gap-2 bg-gray-100 dark:bg-gray-700 rounded-xl p-2 border border-transparent focus-within:border-blue-500 focus-within:ring-1 focus-within:ring-blue-500 transition-all">
+                
+                <!-- Upload Button -->
+                <button @click="$refs.fileInput.click()" class="p-2 text-gray-500 hover:text-blue-500 dark:text-gray-400 dark:hover:text-blue-400 transition-colors">
+                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13"></path></svg>
+                </button>
+                <input type="file" x-ref="fileInput" multiple accept="image/*" class="hidden" @change="handleFiles($event)">
+
+                <!-- Textarea -->
+                <textarea 
+                    x-model="input" 
+                    @keydown.enter.prevent="if(!$event.shiftKey) sendMessage()"
+                    placeholder="Message AI..." 
+                    class="w-full bg-transparent border-none focus:ring-0 resize-none py-2 max-h-32 text-gray-800 dark:text-gray-100 placeholder-gray-400"
+                    rows="1"
+                    style="min-height: 2.5rem;"
+                    x-effect="$el.style.height = 'auto'; $el.style.height = $el.scrollHeight + 'px'"></textarea>
+
+                <!-- Send Button -->
+                <button 
+                    @click="sendMessage()" 
+                    :disabled="(!input.trim() && attachments.length === 0) || isLoading"
+                    class="p-2 bg-blue-600 text-white rounded-lg shadow-sm hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 5l7 7m0 0l-7 7m7-7H3"></path></svg>
+                </button>
+            </div>
+            
+            <div class="text-center text-xs text-gray-400 mt-2">
+                AI can make mistakes. Check important info.
+            </div>
+        </div>
+    </footer>
+
+    <script>
+        function chatApp() {
+            return {
+                models: [],
+                selectedModel: '',
+                messages: [],
+                input: '',
+                attachments: [], // {file: File, preview: string, base64: string}
+                isLoading: false,
+                isStreaming: false,
+
+                async initApp() {
+                    await this.fetchModels();
+                    // Setup highlight.js
+                    marked.setOptions({
+                        highlight: function(code, lang) {
+                            const language = hljs.getLanguage(lang) ? lang : 'plaintext';
+                            return hljs.highlight(code, { language }).value;
+                        }
+                    });
+                },
+
+                async fetchModels() {
+                    try {
+                        const res = await fetch('/api/models');
+                        this.models = await res.json();
+                        if (this.models.length > 0) {
+                            this.selectedModel = this.models[0].id;
+                        }
+                    } catch (e) {
+                        console.error("Failed to load models", e);
+                    }
+                },
+
+                handleFiles(e) {
+                    const files = e.target.files;
+                    if (!files) return;
+                    
+                    Array.from(files).forEach(file => {
+                        const reader = new FileReader();
+                        reader.onload = (ev) => {
+                            // Extract base64 content only (remove data:image/xxx;base64,)
+                            const fullBase64 = ev.target.result;
+                            const base64Content = fullBase64.split(',')[1];
+                            
+                            this.attachments.push({
+                                file: file,
+                                preview: fullBase64,
+                                base64: base64Content
+                            });
+                        };
+                        reader.readAsDataURL(file);
+                    });
+                    
+                    // Reset input so same file can be selected again if needed
+                    e.target.value = '';
+                },
+
+                removeAttachment(index) {
+                    this.attachments.splice(index, 1);
+                },
+
+                async sendMessage() {
+                    if ((!this.input.trim() && this.attachments.length === 0) || this.isLoading) return;
+
+                    const userText = this.input.trim();
+                    const userImages = this.attachments.map(a => a.base64);
+                    
+                    // Add User Message
+                    this.messages.push({
+                        role: 'user',
+                        content: userText,
+                        images: userImages
+                    });
+
+                    // Prepare for AI Response
+                    const aiMsgIndex = this.messages.push({
+                        role: 'assistant',
+                        content: '',
+                        thinking: '',
+                        source: '',
+                        error: null
+                    }) - 1;
+
+                    this.input = '';
+                    this.attachments = [];
+                    this.isLoading = true;
+                    this.isStreaming = false;
+
+                    this.scrollToBottom();
+
+                    try {
+                        // Prepare Payload
+                        // We need to send full history? For now just current turn for simplicity, 
+                        // or full history if we want context. Let's send full history.
+                        // Filter out empty content if any
+                        const history = this.messages.slice(0, -1).map(m => ({
+                            role: m.role,
+                            content: m.content,
+                            images: m.images
+                        }));
+
+                        const response = await fetch('/api/chat', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                                model: this.selectedModel,
+                                messages: history,
+                                stream: true
+                            })
+                        });
+
+                        if (!response.ok) throw new Error('Network error');
+
+                        const reader = response.body.getReader();
+                        const decoder = new TextDecoder();
+                        this.isStreaming = true;
+                        let buffer = '';
+
+                        while (true) {
+                            const { done, value } = await reader.read();
+                            if (done) break;
+                            
+                            buffer += decoder.decode(value, { stream: true });
+                            const lines = buffer.split('\n');
+                            
+                            // Keep the last partial line in buffer
+                            buffer = lines.pop(); 
+                            
+                            for (const line of lines) {
+                                if (line.trim() === '') continue;
+                                if (line.startsWith('data: ')) {
+                                    try {
+                                        const jsonStr = line.substring(6);
+                                        const event = JSON.parse(jsonStr);
+                                        
+                                        if (event.type === 'output') {
+                                            this.messages[aiMsgIndex].content += event.text;
+                                            this.messages[aiMsgIndex].source = event.source;
+                                        } else if (event.type === 'thinking') {
+                                            this.messages[aiMsgIndex].thinking += event.text;
+                                        } else if (event.type === 'error') {
+                                            this.messages[aiMsgIndex].error = event.text;
+                                        }
+                                        
+                                        this.scrollToBottom();
+                                    } catch (e) {
+                                        console.error("Error parsing SSE", e);
+                                    }
+                                }
+                            }
+                        }
+
+                    } catch (e) {
+                        this.messages[aiMsgIndex].error = e.message;
+                    } finally {
+                        this.isLoading = false;
+                        this.isStreaming = false;
+                    }
+                },
+
+                scrollToBottom() {
+                    this.$nextTick(() => {
+                        const container = document.getElementById('chat-container');
+                        container.scrollTop = container.scrollHeight;
+                    });
+                },
+
+                renderMarkdown(text) {
+                    return marked.parse(text || '');
+                }
+            }
+        }
+    </script>
+</body>
+</html>
