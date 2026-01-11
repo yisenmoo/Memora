@@ -24,7 +24,7 @@ def plan(user_input: str, model: str = "llama3") -> str:
 
 输出格式要求（请严格遵守）：
 
-情况 1：需要使用工具
+情况 1：需要使用工具（单步）
 ```json
 {
   "type": "use_tool",
@@ -36,7 +36,21 @@ def plan(user_input: str, model: str = "llama3") -> str:
 }
 ```
 
-情况 2：任务完成，可以回答用户
+情况 2：需要拆解为多步骤任务（Task List）
+当用户问题明显是复杂任务（如分析整个目录、逐个处理文件）时，请输出任务列表：
+```json
+{
+  "type": "task_list",
+  "tasks": [
+    "列出 document 目录下的所有文件",
+    "逐个读取文件内容",
+    "为每个文件生成摘要",
+    "综合所有摘要给出总体总结"
+  ]
+}
+```
+
+情况 3：任务完成，可以回答用户
 ```json
 {
   "type": "final",
@@ -45,8 +59,9 @@ def plan(user_input: str, model: str = "llama3") -> str:
 ```
 
 注意：
+- 优先判断是否需要拆解任务 (task_list)。
+- 如果是单步任务，则输出 use_tool。
 - 每次只输出一个 JSON 块。
-- 不要一次性规划多步，只输出当前这一步。
 - 观察结果会由系统在下一步提供给你。
         """),
         Message(role="user", content=user_input)

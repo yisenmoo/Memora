@@ -14,80 +14,115 @@ def orchestrate(user_input: str, model: str = "llama3"):
     """
     Orchestrator: Agent 的唯一控制器。
     负责 Planner -> Tool -> Observation -> Planner 的循环。
+    支持 Task List 模式。
     """
     context = "" # 纯文本上下文，记录交互历史
-    max_turns = 10 # 防止死循环
+    max_turns = 10 # 防止单任务死循环
     
     print(f"\n[Orchestrator] Start handling: {user_input}")
 
-    for turn in range(max_turns):
-        print(f"\n=== Turn {turn + 1} ===")
-        
-        # 1. 构造输入给 Planner
-        # 如果是第一轮，context 为空
-        # 如果是后续轮次，context 包含之前的 Action 和 Observation
-        planner_input = f"用户目标: {user_input}\n\n当前上下文:\n{context}" if context else user_input
-        
-        print(f"[Orchestrator] Calling Planner...")
-        # Planner 输出原始文本 (可能是 JSON)
-        plan_text = plan(planner_input, model=model)
-        
-        # 2. 解析 Action
-        action = parse_action(plan_text)
-        
-        if not action:
-            print("[Orchestrator] Failed to parse action. Aborting.")
-            break
-            
-        action_type = action.get("type")
-        print(f"[Orchestrator] Action Type: {action_type}")
+    # --- Phase 1: Initial Planning ---
+    print(f"[Orchestrator] Initial Planning...")
+    # 第一次调用 Planner，可能会返回 task_list 或 use_tool
+    plan_text = plan(user_input, model=model)
+    action = parse_action(plan_text)
+    
+    if not action:
+        return "Failed to parse initial plan."
 
-        # 3. 分发 Action (Dispatch)
-        if action_type == "use_tool":
-            tool_name = action.get("tool")
-            args = action.get("args", {})
-            reason = action.get("reason", "No reason provided")
+    # --- Phase 2: Execution Mode Selection ---
+    
+    # 模式 A: 多任务模式 (Task List)
+    if action.get("type") == "task_list":
+        tasks = action.get("tasks", [])
+        print(f"\n[Orchestrator] Detected Task List with {len(tasks)} tasks.")
+        
+        task_results = []
+        
+        for i, task_desc in enumerate(tasks):
+            print(f"\n>>> Executing Task {i+1}/{len(tasks)}: {task_desc}")
             
-            # 获取工具
+            # 对每个子任务，启动一个迷你的 ReAct 循环 (run_single_task)
+            # 我们复用单步执行的逻辑，但需要一个新的 Context 吗？
+            # 最好是累积 Context，这样后面的任务知道前面的结果。
+            
+            task_result = run_single_task(task_desc, model, context)
+            
+            # 记录结果
+            task_results.append(f"Task: {task_desc}\nResult: {task_result}")
+            context += f"\n[Completed Task: {task_desc}]\n[Result: {task_result}]\n"
+            
+        # 所有任务完成，调用 Writer 汇总
+        print("\n[Orchestrator] All tasks completed. Generating summary...")
+        summary_context = "\n\n".join(task_results)
+        return write_answer(user_input, summary_context, model=model)
+
+    # 模式 B: 单任务模式 (ReAct Loop)
+    else:
+        # 如果第一次就是 use_tool 或 final，进入常规循环
+        # 把第一次的结果作为初始状态
+        return run_react_loop(user_input, model, context, initial_action=action)
+
+def run_single_task(task_desc: str, model: str, global_context: str) -> str:
+    """
+    执行单个子任务。这其实就是一个 ReAct 循环，
+    但它的目标是完成 task_desc，而不是回答 user_input。
+    """
+    # 构造针对子任务的输入
+    # 我们把 global_context 作为背景信息传入
+    task_input = f"当前子任务: {task_desc}\n\n背景信息(已完成的任务):\n{global_context}"
+    return run_react_loop(task_input, model, context="", max_turns=5) # 子任务步数限制少一点
+
+def run_react_loop(user_input: str, model: str, context: str, initial_action=None, max_turns=10):
+    """
+    标准的 ReAct 循环：Planner -> Action -> Tool -> Observation
+    """
+    current_action = initial_action
+    
+    for turn in range(max_turns):
+        # 如果没有初始 Action (或后续轮次)，则调用 Planner
+        if not current_action:
+            planner_input = f"目标: {user_input}\n\n当前执行进度:\n{context}" if context else user_input
+            print(f"[Loop] Thinking...")
+            plan_text = plan(planner_input, model=model)
+            current_action = parse_action(plan_text)
+        
+        if not current_action:
+            return "Failed to parse action in loop."
+            
+        action_type = current_action.get("type")
+        
+        # Dispatch
+        if action_type == "use_tool":
+            tool_name = current_action.get("tool")
+            args = current_action.get("args", {})
+            reason = current_action.get("reason", "")
+            
             tool = get_tool(tool_name)
-            if not tool:
-                observation = f"Error: Tool '{tool_name}' not found."
-            else:
-                print(f"[Orchestrator] Running Tool '{tool_name}' with args: {args}")
+            if tool:
+                print(f"[Loop] Tool '{tool_name}' args: {args}")
                 try:
-                    # 执行工具
                     result = tool.run(**args)
                     observation = f"Tool Output:\n{result}"
                 except Exception as e:
-                    observation = f"Tool Execution Error: {str(e)}"
+                    observation = f"Tool Error: {e}"
+            else:
+                observation = f"Error: Tool '{tool_name}' not found."
             
-            # 4. 回灌 Observation (核心)
-            # 记录这一轮的思考、行动和结果
-            step_record = f"""
-Step {turn + 1}:
-Thought: {reason}
-Action: use_tool({tool_name}, {json.dumps(args)})
-Observation:
-{observation}
-"""
+            # Record & Continue
+            step_record = f"Thought: {reason}\nAction: {tool_name}({json.dumps(args)})\nObservation: {observation}"
             context += "\n" + step_record
-            print(f"[Orchestrator] Observation collected.")
-            continue # 进入下一轮循环
+            current_action = None # Reset for next turn
+            continue
 
         elif action_type == "final":
-            # 5. 最终输出
-            content = action.get("content", "")
-            print("[Orchestrator] Final answer received.")
+            return current_action.get("content", "")
             
-            # 这里的 content 已经是 Planner 总结好的回答了
-            # 但为了严谨符合架构 (Planner -> Action -> Writer)，我们可以让 Writer 再润色一次
-            # 如果 content 很短或者需要格式化，Writer 很有用。
-            # 这里我们直接调用 Writer。
+        elif action_type == "task_list":
+            # 嵌套 Task List？暂不支持递归拆解，直接报错或当作普通文本
+            return "Error: Nested task lists are not supported yet."
             
-            return write_answer(user_input, context + "\n" + content, model=model)
-
         else:
-            print(f"[Orchestrator] Unknown action type: {action_type}")
-            break
+            return f"Unknown action: {action_type}"
 
-    return "Task ended (max turns reached)."
+    return "Task loop limit reached."
