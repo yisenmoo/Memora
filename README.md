@@ -2,7 +2,7 @@
 
 <div align="center">
 
-![License](https://img.shields.io/badge/license-MIT-blue.svg?style=flat-square)
+![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg?style=flat-square)
 ![Python](https://img.shields.io/badge/python-3.9+-blue.svg?style=flat-square)
 ![Status](https://img.shields.io/badge/status-active-success.svg?style=flat-square)
 ![PRs Welcome](https://img.shields.io/badge/PRs-welcome-pink.svg?style=flat-square)
@@ -124,4 +124,4 @@ Contributions are welcome! Please feel free to submit a Pull Request.
 
 ## 📄 License
 
-This project is licensed under the MIT License.
+This project is licensed under the Apache License 2.0.
