@@ -10,39 +10,32 @@ class ShellTool(BaseTool):
 
     # 安全白名单
     ALLOWED_COMMANDS = [
-        "ls", "pwd", "whoami", "uname", "python", "cat", "echo", "date"
+        "ls", "pwd", "whoami", "uname", "python", "cat", "echo", "date",
+        "mkdir", "touch", "cp", "mv", "grep", "find", "head", "tail", "wc"
     ]
     
     # 危险黑名单 (前缀匹配)
     FORBIDDEN_PREFIXES = [
-        "rm", "sudo", "shutdown", "reboot", "curl", "wget", "mkfs", "dd"
+        "rm", "sudo", "shutdown", "reboot", "curl", "wget", "mkfs", "dd",
+        ":(){ :|:& };:" # Fork bomb
     ]
 
     def run(self, command: str) -> str:
         command = command.strip()
         
         # 简单安全检查
-        is_allowed = False
         cmd_head = command.split()[0] if command else ""
         
-        # 检查黑名单
+        # 1. 优先检查黑名单 (Explicit Deny)
         for bad in self.FORBIDDEN_PREFIXES:
+            # 检查命令开头，防止 rm -rf
+            # 也要防止 ; rm -rf 这种多命令注入 (简单起见，暂不处理复杂 shell 解析，假设 Agent 比较规矩)
             if command.startswith(bad):
                  return f"Error: Command '{bad}' is forbidden for security reasons."
 
-        # 检查白名单 (宽松模式：只要不是黑名单且是常见查询命令)
-        # 实际上为了演示，我们允许大部分非破坏性命令，这里做个简单过滤
-        # 但按照需求文档：只允许白名单内的
-        
-        # 修正：需求文档说 “允许：ls, pwd, whoami, uname, python --version, cat”
-        # 并没有说只允许这些。但为了安全，我们还是尽量严谨。
-        # 让我们实现一个简单的检查逻辑：
-        
+        # 2. 检查白名单 (Explicit Allow)
         if not any(command.startswith(allowed) for allowed in self.ALLOWED_COMMANDS):
-             # 如果不是显式允许的，稍微放宽一点，只要不是显式禁止的？
-             # 不，安全第一。Agent 可能会乱来。
-             # 但 python --version 这种带参数的需要匹配前缀。
-             return f"Error: Command '{cmd_head}' is not in the allowed whitelist."
+             return f"Error: Command '{cmd_head}' is not in the allowed whitelist. Allowed: {', '.join(self.ALLOWED_COMMANDS)}"
 
         try:
             # 执行命令

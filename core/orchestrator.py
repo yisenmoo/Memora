@@ -39,17 +39,26 @@ def orchestrate(user_input: str, model: str = "llama3"):
         
         task_results = []
         
-        for i, task_desc in enumerate(tasks):
-            print(f"\n>>> Executing Task {i+1}/{len(tasks)}: {task_desc}")
+        # 遍历执行每个任务
+        for i, task in enumerate(tasks):
+            # 兼容 task 是字符串或字典的情况
+            if isinstance(task, dict):
+                task_desc = task.get("goal") or task.get("description", str(task))
+                task_id = task.get("id", f"task_{i+1}")
+            else:
+                task_desc = str(task)
+                task_id = f"task_{i+1}"
+                
+            print(f"\n>>> [Task {i+1}/{len(tasks)}] ID: {task_id}")
+            print(f">>> Goal: {task_desc}")
             
             # 对每个子任务，启动一个迷你的 ReAct 循环 (run_single_task)
-            # 我们复用单步执行的逻辑，但需要一个新的 Context 吗？
-            # 最好是累积 Context，这样后面的任务知道前面的结果。
-            
             task_result = run_single_task(task_desc, model, context)
             
             # 记录结果
-            task_results.append(f"Task: {task_desc}\nResult: {task_result}")
+            task_results.append(f"Task ID: {task_id}\nGoal: {task_desc}\nResult: {task_result}")
+            
+            # 将当前任务结果追加到全局上下文，供后续任务参考
             context += f"\n[Completed Task: {task_desc}]\n[Result: {task_result}]\n"
             
         # 所有任务完成，调用 Writer 汇总
@@ -69,8 +78,8 @@ def run_single_task(task_desc: str, model: str, global_context: str) -> str:
     但它的目标是完成 task_desc，而不是回答 user_input。
     """
     # 构造针对子任务的输入
-    # 我们把 global_context 作为背景信息传入
-    task_input = f"当前子任务: {task_desc}\n\n背景信息(已完成的任务):\n{global_context}"
+    # 我们把 global_context 作为背景信息传入，帮助 Agent 了解上下文（例如之前查到的文件列表）
+    task_input = f"当前子任务目标: {task_desc}\n\n[背景信息 - 已完成的任务结果]:\n{global_context}"
     return run_react_loop(task_input, model, context="", max_turns=5) # 子任务步数限制少一点
 
 def run_react_loop(user_input: str, model: str, context: str, initial_action=None, max_turns=10):
@@ -102,6 +111,7 @@ def run_react_loop(user_input: str, model: str, context: str, initial_action=Non
             if tool:
                 print(f"[Loop] Tool '{tool_name}' args: {args}")
                 try:
+                    # 真实执行 Tool
                     result = tool.run(**args)
                     observation = f"Tool Output:\n{result}"
                 except Exception as e:
@@ -119,7 +129,7 @@ def run_react_loop(user_input: str, model: str, context: str, initial_action=Non
             return current_action.get("content", "")
             
         elif action_type == "task_list":
-            # 嵌套 Task List？暂不支持递归拆解，直接报错或当作普通文本
+            # 嵌套 Task List？暂不支持递归拆解，防止死循环
             return "Error: Nested task lists are not supported yet."
             
         else:

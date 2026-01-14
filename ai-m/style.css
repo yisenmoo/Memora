@@ -1,0 +1,4 @@
+body { margin: 0; padding: 0; font-family: 'Arial', sans-serif; }
+input[type="tel"] { width: 100%; padding: 10px; margin: 5px 0; }
+button { width: 100%; padding: 10px; margin: 5px 0; }
+@media (min-width: 768px) { input[type="tel"] { width: 300px; } button { width: auto; } }
