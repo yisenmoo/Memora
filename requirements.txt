@@ -1,0 +1,13 @@
+fastapi
+uvicorn
+pydantic
+requests
+pandas
+openpyxl
+python-docx
+python-pptx
+Pillow
+openai
+dashscope
+google-generativeai
+importlib-metadata
