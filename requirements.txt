@@ -11,3 +11,4 @@ openai
 dashscope
 google-generativeai
 importlib-metadata
+beautifulsoup4

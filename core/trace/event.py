@@ -9,12 +9,14 @@ class TraceEvent:
     data: Dict[str, Any]
     id: str = field(default_factory=lambda: str(uuid.uuid4()))
     timestamp: float = field(default_factory=time.time)
+    source: str = "system" # tool, model_knowledge, system
 
     def to_dict(self) -> Dict[str, Any]:
         return {
             "id": self.id,
             "timestamp": self.timestamp,
             "type": self.type,
+            "source": self.source,
             "data": self.data
         }
 
