@@ -1,7 +1,7 @@
 import json
 import time
 import uuid
-from typing import List, Optional, Dict, Any
+from typing import List, Optional, Dict, Any, Callable
 
 from core.state import AgentState
 from core.task import Task
@@ -421,11 +421,15 @@ class Orchestrator:
              prompt += f"\n[Latest Observation]:\n{self.current_observation}\n"
         return prompt
 
-def orchestrate(user_input: str, model: str = "llama3", agent_id: str = None) -> str:
+def orchestrate(user_input: str, model: str = "llama3", agent_id: str = None, on_trace: Optional[Callable] = None) -> str:
     store = FileMemoryStore()
     if agent_id and store.has_checkpoint(agent_id):
         print(f"[System] Found checkpoint for Agent {agent_id}. Resuming...")
         orchestrator = Orchestrator.load_from_checkpoint(agent_id, model=model)
     else:
         orchestrator = Orchestrator(user_input, model, agent_id)
+        
+    if on_trace:
+        orchestrator.trace.add_listener(on_trace)
+        
     return orchestrator.start()

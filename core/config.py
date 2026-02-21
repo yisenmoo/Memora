@@ -41,3 +41,7 @@ def get_web_config() -> Dict[str, Any]:
 def get_planner_config() -> Dict[str, Any]:
     config = load_config()
     return config.get("planner", {})
+
+def get_llm_config() -> Dict[str, Any]:
+    config = load_config()
+    return config.get("llms", {})
